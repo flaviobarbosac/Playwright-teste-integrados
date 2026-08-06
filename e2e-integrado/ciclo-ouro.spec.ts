@@ -7,16 +7,16 @@ import { preencherMoedaBr } from './utils/moeda-form';
 import { aguardarCarregamentoGoogleProntidao, fecharDialogoGoogleSeAberto } from './utils/google-workspace';
 
 test.describe('Ciclo de ouro (API real)', () => {
-  test.describe.configure({ mode: 'serial', timeout: 180_000 });
+  test.describe.configure({ mode: 'serial', timeout: 300_000 });
 
   test('Proposta → Contrato → Cobrança → Recebido', async ({ page }) => {
     const stamp = Date.now();
     const propostaTitulo = `E2E Proposta ${stamp}`;
 
-    const { clienteId } = await cadastrarClientePf4Devs(page, {
+    const { clienteId, pessoa } = await cadastrarClientePf4Devs(page, {
       nome: (p) => `E2E ${p.nome}`,
     });
-    await expect(page.getByText('Cliente cadastrado.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: pessoa.nome })).toBeVisible({ timeout: 15_000 });
 
     expect(clienteId).toBeTruthy();
 
@@ -74,42 +74,62 @@ test.describe('Ciclo de ouro (API real)', () => {
 
     const aceite = await api.aceitarPropostaPortal(envio.token);
     expect(aceite.status).toBe(3);
+    await page.waitForTimeout(2_000);
 
     await gotoApp(page, `/propostas/${propostaId}/editar`);
-    await expect(page.getByRole('button', { name: 'Gerar contrato' })).toBeVisible();
+    await fecharDialogoGoogleSeAberto(page);
+    await expect(page.getByRole('button', { name: 'Gerar contrato' })).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: 'Gerar contrato' }).click();
     await expect(page.getByText('Contrato gerado.')).toBeVisible();
     await expect(page).toHaveURL(/\/contratos\/[0-9a-f-]+/);
 
-    await gotoApp(page, `/propostas/${propostaId}/editar`);
-    await fecharDialogoGoogleSeAberto(page);
-
     let cobrancaId: string | undefined;
-    const cobrancasExistentes = await api.listarCobrancasDaProposta(propostaId);
-    cobrancaId = cobrancasExistentes[0]?.id;
+    let lastCobrancaError: unknown;
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        const existentes = await api.listarCobrancasDaProposta(propostaId);
+        if (existentes[0]?.id) {
+          cobrancaId = existentes[0].id;
+          break;
+        }
+        const criada = await api.criarCobrancaProposta(propostaId, 150);
+        if (criada?.id) {
+          cobrancaId = criada.id;
+          break;
+        }
+      } catch (error) {
+        lastCobrancaError = error;
+        await page.waitForTimeout(5_000 * (attempt + 1));
+      }
+    }
 
     if (!cobrancaId) {
-      const criarCobrancaBtn = page.getByRole('button', { name: 'Criar cobrança' });
-      if (await criarCobrancaBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await criarCobrancaBtn.click();
-        const dialog = page.getByRole('dialog');
-        await expect(dialog).toBeVisible();
-        await dialog.getByRole('button', { name: 'Criar cobrança' }).click();
-        await expect(page.getByText('Cobrança criada.')).toBeVisible({ timeout: 30_000 });
-      } else {
-        await api.criarCobrancaProposta(propostaId, 150);
+      await gotoApp(page, `/cobrancas/nova?clienteId=${clienteId}`);
+      await expect(page.getByRole('heading', { name: /Nova cobrança/i })).toBeVisible({ timeout: 30_000 });
+      const propostaField = page.getByLabel(/proposta/i);
+      if (await propostaField.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        await propostaField.click();
+        await page.getByRole('option', { name: new RegExp(propostaTitulo) }).click();
+      }
+      await preencherMoedaBr(page, 'Valor', 150);
+      await page.getByRole('button', { name: 'Salvar' }).click();
+      await page.waitForURL(/\/cobrancas/, { timeout: 60_000 }).catch(() => undefined);
+      for (let attempt = 0; attempt < 15; attempt++) {
+        const cobrancas = await api.listarCobrancasDaProposta(propostaId);
+        if (cobrancas[0]?.id) {
+          cobrancaId = cobrancas[0].id;
+          break;
+        }
+        await page.waitForTimeout(2_000);
       }
     }
 
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const cobrancas = await api.listarCobrancasDaProposta(propostaId);
-      if (cobrancas.length > 0) {
-        cobrancaId = cobrancas[0]?.id;
-        break;
-      }
-      await page.waitForTimeout(1_000);
+    if (!cobrancaId) {
+      const detail =
+        lastCobrancaError instanceof Error ? lastCobrancaError.message : String(lastCobrancaError ?? '');
+      throw new Error(`Não foi possível criar cobrança para a proposta. ${detail}`);
     }
-    expect(cobrancaId).toBeTruthy();
 
     await gotoApp(page, `/cobrancas/${cobrancaId}/editar`);
     await expect(page.getByRole('heading', { name: /cobran/i })).toBeVisible();

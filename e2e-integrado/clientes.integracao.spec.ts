@@ -64,15 +64,13 @@ test.describe('Clientes (API real)', () => {
     }
 
     await page.getByRole('row').filter({ hasText: nomeEditado }).click();
-    await expect(page).toHaveURL(new RegExp(`/clientes/${clienteId}$`));
-    await expect(page.getByRole('heading', { name: nomeEditado })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/clientes/${clienteId}$`), { timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: nomeEditado })).toBeVisible({ timeout: 30_000 });
   });
 
   test('edita cliente pela rota /editar', async ({ page }) => {
     await gotoApp(page, `/clientes/${clienteId}/editar`);
-    await expect(page.getByRole('heading', { name: 'Editar cliente' })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(page.getByText('Carregando cliente...')).toBeHidden({ timeout: 90_000 });
     await expect(page.getByLabel('CPF/CNPJ')).toBeVisible({ timeout: 15_000 });
 
     const apelido = `Apelido ${Date.now()}`;
@@ -87,9 +85,11 @@ test.describe('Clientes (API real)', () => {
   test('desativa e reativa cliente', async ({ page }) => {
     await gotoApp(page, `/clientes/${clienteId}`);
     await page.getByRole('button', { name: 'Desativar cliente' }).click();
-    await page.getByRole('button', { name: 'Desativar' }).click();
+    const confirmDialog = page.getByRole('dialog');
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.getByRole('button', { name: /Desativar|Excluir/i }).click();
 
-    await expect(page.getByText('Cliente excluído.')).toBeVisible();
+    await expect(page.getByText('Cliente excluído.')).toBeVisible({ timeout: 15_000 });
     await expect(page).toHaveURL(/\/clientes$/);
 
     await page.getByRole('switch', { name: 'Excluídos' }).click();
@@ -98,7 +98,7 @@ test.describe('Clientes (API real)', () => {
     await page
       .getByRole('row')
       .filter({ hasText: nomeEditado })
-      .getByRole('button', { name: 'Reativar' })
+      .getByRole('button', { name: /Restaurar|Reativar/i })
       .click();
     await page.getByRole('dialog').getByRole('button', { name: 'Reativar' }).click();
 

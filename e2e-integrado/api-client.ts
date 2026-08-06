@@ -31,7 +31,7 @@ export class ClampfyApiClient {
     };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown, retries = 5): Promise<T> {
+  private async request<T>(method: string, path: string, body?: unknown, retries = 8): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt < retries; attempt++) {
       const response = await fetch(`${getApiBaseUrl()}${path}`, {
@@ -40,9 +40,14 @@ export class ClampfyApiClient {
         body: body === undefined ? undefined : JSON.stringify(body),
       });
 
-      if (response.status === 429 && attempt < retries - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2_000 * (attempt + 1)));
-        continue;
+      if (response.status === 429) {
+        if (attempt < retries - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 3_000 * (attempt + 1)));
+          continue;
+        }
+        const text = await response.text();
+        lastError = new Error(`${method} ${path} → 429: ${text}`);
+        break;
       }
 
       if (!response.ok) {

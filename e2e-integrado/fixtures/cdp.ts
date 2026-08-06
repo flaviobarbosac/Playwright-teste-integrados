@@ -30,9 +30,14 @@ export const test = base.extend<{}, { cdpBrowser: Browser }>({
   },
 
   page: async ({ context }, use) => {
-    const page = await context.newPage();
-    await gotoApp(page, '/');
+    const clampfyPage = context.pages().find((p) => /clampfy\.com/i.test(p.url()));
+    const page = clampfyPage ?? await context.newPage();
+    if (!clampfyPage) {
+      await gotoApp(page, '/');
+    }
     await use(page);
-    await page.close();
+    if (!clampfyPage) {
+      await page.close();
+    }
   },
 });
