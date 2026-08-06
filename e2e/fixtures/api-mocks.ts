@@ -81,6 +81,24 @@ export async function setupClientesApiMocks(
       return json(route, { prontoParaEmitir: false, itens: [] });
     }
 
+    if (method === 'GET' && path === '/google/prontidao') {
+      return json(route, {
+        conectado: true,
+        drivePronto: true,
+        calendarPronto: true,
+        pendencias: [],
+      });
+    }
+
+    if (method === 'GET' && path === '/google/conexao') {
+      return json(route, {
+        contaAutenticada: true,
+        workspaceConectado: true,
+        conectado: true,
+        googleEmail: 'e2e@clampfy.test',
+      });
+    }
+
     if (method === 'GET' && path === '/wallet/saldo') {
       return json(route, { saldoDisponivel: 0, saldoBloqueado: 0 });
     }

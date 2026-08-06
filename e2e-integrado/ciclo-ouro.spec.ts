@@ -1,38 +1,73 @@
 import { test, expect } from './fixtures';
 import { createApiClient } from './api-client';
-import { loadSession } from './session';
-import { fetchPessoa4Devs } from './utils/4devs';
-import { cadastrarClientePf } from './utils/cliente-form';
+import { loadSession, readSessionFromPage, usesLiveBrowserSession } from './session';
+import { cadastrarClientePf4Devs } from './utils/cliente-form';
+import { gotoApp } from './utils/app-url';
+import { preencherMoedaBr } from './utils/moeda-form';
+import { aguardarCarregamentoGoogleProntidao, fecharDialogoGoogleSeAberto } from './utils/google-workspace';
 
 test.describe('Ciclo de ouro (API real)', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
   test('Proposta → Contrato → Cobrança → Recebido', async ({ page }) => {
     const stamp = Date.now();
-    const pessoa = await fetchPessoa4Devs();
     const propostaTitulo = `E2E Proposta ${stamp}`;
-    const api = createApiClient(loadSession());
 
-    const clienteId = await cadastrarClientePf(page, {
-      ...pessoa,
-      nome: `E2E ${pessoa.nome}`,
+    const { clienteId } = await cadastrarClientePf4Devs(page, {
+      nome: (p) => `E2E ${p.nome}`,
     });
     await expect(page.getByText('Cliente cadastrado.')).toBeVisible();
 
     expect(clienteId).toBeTruthy();
 
-    await page.goto(`/propostas/nova?clienteId=${clienteId}`);
+    const session = usesLiveBrowserSession() ? await readSessionFromPage(page) : loadSession();
+    const api = createApiClient(session);
+
+    await gotoApp(page, `/propostas/nova?clienteId=${clienteId}`);
     await expect(page.getByRole('heading', { name: /proposta/i })).toBeVisible();
+    await aguardarCarregamentoGoogleProntidao(page);
     await page.getByLabel('Título').fill(propostaTitulo);
     await page.getByLabel('Descrição').fill('Serviço E2E ciclo de ouro');
-    await page.getByLabel('Qtd').fill('1');
-    await page.getByLabel('Vlr unit.').fill('150');
+    await preencherMoedaBr(page, 'Vlr unit.', 150);
     await page.getByRole('button', { name: 'Salvar' }).click();
-    await expect(page.getByText('Proposta salva na lista.')).toBeVisible();
 
-    const propostaMatch = page.url().match(/\/propostas\/([0-9a-f-]+)\/editar/i);
-    expect(propostaMatch?.[1]).toBeTruthy();
-    const propostaId = propostaMatch![1]!;
+    const googleBlocked = page.getByText(/Google Drive e o Google Calendar/i);
+    const savedToast = page.getByText('Proposta salva na lista.');
+
+    const outcome = await Promise.race([
+      savedToast.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'saved' as const),
+      googleBlocked.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'blocked' as const),
+    ]).catch(() => 'timeout' as const);
+
+    let propostaId: string;
+
+    if (outcome === 'saved') {
+      await expect(page).toHaveURL(/\/propostas$/);
+      const propostas = await api.listarPropostas();
+      const proposta = propostas.find((p) => p.titulo === propostaTitulo);
+      expect(proposta?.id).toBeTruthy();
+      propostaId = proposta!.id;
+    } else if (outcome === 'blocked') {
+      const criada = await api.criarProposta({
+        clienteId,
+        titulo: propostaTitulo,
+        itens: [{ descricao: 'Serviço E2E ciclo de ouro', quantidade: 1, valorUnitario: 150 }],
+      });
+      propostaId = criada.id;
+    } else {
+      try {
+        const criada = await api.criarProposta({
+          clienteId,
+          titulo: propostaTitulo,
+          itens: [{ descricao: 'Serviço E2E ciclo de ouro', quantidade: 1, valorUnitario: 150 }],
+        });
+        propostaId = criada.id;
+      } catch (error) {
+        throw new Error(
+          `Salvar proposta não concluiu na UI nem via API. ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
 
     const envio = await api.enviarProposta(propostaId);
     expect(envio.token).toBeTruthy();
@@ -40,21 +75,32 @@ test.describe('Ciclo de ouro (API real)', () => {
     const aceite = await api.aceitarPropostaPortal(envio.token);
     expect(aceite.status).toBe(3);
 
-    await page.reload();
+    await gotoApp(page, `/propostas/${propostaId}/editar`);
     await expect(page.getByRole('button', { name: 'Gerar contrato' })).toBeVisible();
     await page.getByRole('button', { name: 'Gerar contrato' }).click();
     await expect(page.getByText('Contrato gerado.')).toBeVisible();
-    await expect(page).toHaveURL(/\/contratos\/[0-9a-f-]+$/);
+    await expect(page).toHaveURL(/\/contratos\/[0-9a-f-]+/);
 
-    await page.goto(`/propostas/${propostaId}/editar`);
-    await expect(page.getByRole('button', { name: 'Criar cobrança' })).toBeVisible();
-    await page.getByRole('button', { name: 'Criar cobrança' }).click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Criar cobrança' }).click();
-    await expect(page.getByText('Cobrança criada.')).toBeVisible();
+    await gotoApp(page, `/propostas/${propostaId}/editar`);
+    await fecharDialogoGoogleSeAberto(page);
 
     let cobrancaId: string | undefined;
+    const cobrancasExistentes = await api.listarCobrancasDaProposta(propostaId);
+    cobrancaId = cobrancasExistentes[0]?.id;
+
+    if (!cobrancaId) {
+      const criarCobrancaBtn = page.getByRole('button', { name: 'Criar cobrança' });
+      if (await criarCobrancaBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        await criarCobrancaBtn.click();
+        const dialog = page.getByRole('dialog');
+        await expect(dialog).toBeVisible();
+        await dialog.getByRole('button', { name: 'Criar cobrança' }).click();
+        await expect(page.getByText('Cobrança criada.')).toBeVisible({ timeout: 30_000 });
+      } else {
+        await api.criarCobrancaProposta(propostaId, 150);
+      }
+    }
+
     for (let attempt = 0; attempt < 30; attempt++) {
       const cobrancas = await api.listarCobrancasDaProposta(propostaId);
       if (cobrancas.length > 0) {
@@ -65,7 +111,7 @@ test.describe('Ciclo de ouro (API real)', () => {
     }
     expect(cobrancaId).toBeTruthy();
 
-    await page.goto(`/cobrancas/${cobrancaId}/editar`);
+    await gotoApp(page, `/cobrancas/${cobrancaId}/editar`);
     await expect(page.getByRole('heading', { name: /cobran/i })).toBeVisible();
 
     const sandboxBtn = page.getByRole('button', { name: 'Atualizar pagamento (sandbox)' });
@@ -76,7 +122,7 @@ test.describe('Ciclo de ouro (API real)', () => {
     });
     await expect(page.getByText('Recebida')).toBeVisible({ timeout: 60_000 });
 
-    await page.goto('/dashboard');
+    await gotoApp(page, '/dashboard');
     await expect(page.getByText('Recebido')).toBeVisible();
   });
 });

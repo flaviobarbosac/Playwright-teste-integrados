@@ -10,10 +10,12 @@
     "test:headed:slow": "playwright test --headed",
     "test:integrado": "playwright test -c playwright.integracao.config.ts",
     "test:integrado:headed": "playwright test -c playwright.integracao.config.ts --headed",
-    "test:dev": "playwright test -c playwright.dev.config.ts",
-    "test:dev:headed": "playwright test -c playwright.dev.config.ts --headed",
-    "auth:save": "playwright codegen https://www.dev.clampfy.com --save-storage=e2e-integrado/.auth/user.json",
-    "test:report": "playwright show-report"
+    "test:dev": "node scripts/check-cdp.mjs && playwright test -c playwright.dev.config.ts",
+    "test:dev:headed": "node scripts/check-cdp.mjs && playwright test -c playwright.dev.config.ts --headed",
+    "chrome:debug": "node scripts/chrome-debug.mjs",
+    "auth:save": "node scripts/save-auth.mjs",
+    "test:report": "playwright show-report reports/html",
+    "test:resumo": "node -e \"const fs=require('fs');const p='reports/ultimo-resumo.md';console.log(fs.existsSync(p)?fs.readFileSync(p,'utf8'):'Nenhum relatório encontrado. Rode os testes primeiro.')\""
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1"

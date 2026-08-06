@@ -1,4 +1,5 @@
 import { FOUR_DEVS_URL } from '../constants';
+import { gerarCpfValido } from './cpf';
 
 /** Person record from https://www.4devs.com.br/ gerador de pessoas. */
 export interface Pessoa4Devs {
@@ -64,7 +65,7 @@ export async function fetchPessoa4Devs(): Promise<Pessoa4Devs> {
 
   return {
     nome: raw.nome,
-    cpf: raw.cpf,
+    cpf: gerarCpfValido(),
     email: raw.email ?? `e2e.${Date.now()}@4devs.test`,
     celular: raw.celular,
     telefone_fixo: raw.telefone_fixo,

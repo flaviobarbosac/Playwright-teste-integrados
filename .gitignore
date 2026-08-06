@@ -1,8 +1,11 @@
 node_modules/
 playwright-report/
+reports/
 test-results/
 blob-report/
 playwright/.cache/
 e2e-integrado/.auth/
+e2e-integrado/.chrome-profile/
+e2e-integrado/.chrome-cdp-profile/
 .env
 *.log

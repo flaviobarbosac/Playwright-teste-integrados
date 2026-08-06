@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 import { DEFAULT_API_BASE_URL } from './e2e-integrado/constants';
+import { playwrightReporters } from './playwright.reporters';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const frontDir = process.env.CLAMPFY_FRONT_DIR ?? path.resolve(rootDir, '../prosiffionaisliberais-front');
@@ -25,7 +26,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: process.env.CI ? [['html'], ['list']] : 'list',
+  reporter: playwrightReporters,
   timeout: 180_000,
   use: {
     baseURL: 'http://localhost:5173',
