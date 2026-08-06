@@ -10,6 +10,8 @@ const apiBaseUrl = process.env.E2E_API_BASE_URL ?? DEFAULT_API_BASE_URL;
 const apiOrigin = apiBaseUrl.replace(/\/api\/v1\/?$/i, '');
 const prereqScript = path.join(rootDir, 'scripts', 'ensure-prerequisites.mjs');
 
+process.env.E2E_AUTH_MODE = process.env.E2E_AUTH_MODE ?? 'local';
+
 const e2eEnv = {
   CLAMPFY_E2E: 'true',
   E2E__Enabled: 'true',

@@ -10,6 +10,9 @@
     "test:headed:slow": "playwright test --headed",
     "test:integrado": "playwright test -c playwright.integracao.config.ts",
     "test:integrado:headed": "playwright test -c playwright.integracao.config.ts --headed",
+    "test:dev": "playwright test -c playwright.dev.config.ts",
+    "test:dev:headed": "playwright test -c playwright.dev.config.ts --headed",
+    "auth:save": "playwright codegen https://www.dev.clampfy.com --save-storage=e2e-integrado/.auth/user.json",
     "test:report": "playwright show-report"
   },
   "devDependencies": {

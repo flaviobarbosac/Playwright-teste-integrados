@@ -1,27 +1,25 @@
 import { test, expect } from './fixtures';
 import { createApiClient } from './api-client';
 import { loadSession } from './session';
-import { gerarCpfValido } from './utils/cpf';
+import { fetchPessoa4Devs } from './utils/4devs';
+import { cadastrarClientePf } from './utils/cliente-form';
 
 test.describe('Ciclo de ouro (API real)', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
   test('Proposta → Contrato → Cobrança → Recebido', async ({ page }) => {
     const stamp = Date.now();
-    const clienteNome = `E2E Cliente ${stamp}`;
+    const pessoa = await fetchPessoa4Devs();
     const propostaTitulo = `E2E Proposta ${stamp}`;
     const api = createApiClient(loadSession());
 
-    await page.goto('/clientes/novo');
-    await page.getByLabel('CPF/CNPJ').fill(gerarCpfValido());
-    await page.getByLabel('Nome / Razão social').fill(clienteNome);
-    await page.getByLabel('E-mail').fill(`e2e-${stamp}@clampfy.test`);
-    await page.locator('button[form="cliente-form"]').click();
+    const clienteId = await cadastrarClientePf(page, {
+      ...pessoa,
+      nome: `E2E ${pessoa.nome}`,
+    });
     await expect(page.getByText('Cliente cadastrado.')).toBeVisible();
 
-    const clienteMatch = page.url().match(/\/clientes\/([0-9a-f-]+)$/i);
-    expect(clienteMatch?.[1]).toBeTruthy();
-    const clienteId = clienteMatch![1]!;
+    expect(clienteId).toBeTruthy();
 
     await page.goto(`/propostas/nova?clienteId=${clienteId}`);
     await expect(page.getByRole('heading', { name: /proposta/i })).toBeVisible();
