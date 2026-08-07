@@ -6,6 +6,7 @@ import {
   isCdpAuthMode,
   isStorageAuthMode,
   loadSessionFromStorageState,
+  prepareDevSessionForE2e,
   readSessionFromPage,
   saveSession,
   STORAGE_STATE_FILE,
@@ -16,6 +17,7 @@ setup('preparar autenticação E2E', async ({ page }) => {
   if (usesLiveBrowserSession()) {
     const session = await readSessionFromPage(page);
     expect(session.accessToken).toBeTruthy();
+    await prepareDevSessionForE2e(session);
     const label = isCdpAuthMode() ? getCdpUrl() : 'chrome';
     console.log(`[e2e-dev/${label}] Sessão de ${session.nome}`);
     return;

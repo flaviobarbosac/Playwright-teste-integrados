@@ -97,6 +97,37 @@ export async function readSessionFromPage(page: Page): Promise<ClampfySession> {
   return JSON.parse(raw) as ClampfySession;
 }
 
+export async function prepareDevSessionForE2e(session: ClampfySession): Promise<void> {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/auth/e2e/prepare`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (response.status === 404) {
+    return;
+  }
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`POST ${apiBase}/auth/e2e/prepare falhou (${response.status}): ${body}`);
+  }
+
+  const prepared = (await response.json()) as { asaasReady?: boolean; prepareAviso?: string | null };
+  if (prepared.prepareAviso) {
+    console.warn(`[e2e-integrado] Aviso prepare: ${prepared.prepareAviso}`);
+  }
+  if (prepared.asaasReady === false) {
+    throw new Error(
+      `${prepared.prepareAviso ?? 'Asaas sandbox não configurado.'}\n` +
+        'Configure a subconta em Configurações ou defina ASAAS_E2E_API_KEY no servidor dev.',
+    );
+  }
+}
+
 export async function fetchDevSession(): Promise<ClampfySession> {
   const apiBase = getApiBaseUrl();
   const response = await fetch(`${apiBase}/auth/e2e`, {
