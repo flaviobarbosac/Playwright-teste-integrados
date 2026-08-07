@@ -32,9 +32,15 @@ export default defineConfig({
   projects: [
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
     {
-      name: 'dev',
+      name: 'clientes',
+      testMatch: /clientes\.integracao\.spec\.ts/,
       dependencies: ['setup'],
-      testIgnore: [/auth\.setup\.ts/],
+    },
+    {
+      name: 'ciclo-ouro',
+      testMatch: /ciclo-ouro\.spec\.ts/,
+      dependencies: ['setup', 'clientes'],
+      timeout: 300_000,
     },
   ],
 });

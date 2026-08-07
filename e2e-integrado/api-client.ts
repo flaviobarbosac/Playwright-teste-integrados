@@ -84,6 +84,10 @@ export class ClampfyApiClient {
     return this.request('POST', `/proposta/${propostaId}/enviar`, { enviarEmail: false });
   }
 
+  async gerarContratoProposta(propostaId: string): Promise<{ id: string }> {
+    return this.request('POST', `/proposta/${propostaId}/gerar-contrato`);
+  }
+
   async aceitarPropostaPortal(token: string): Promise<{ status: number }> {
     const response = await fetch(`${getApiBaseUrl()}/portal/proposta/${token}/aceitar`, {
       method: 'POST',

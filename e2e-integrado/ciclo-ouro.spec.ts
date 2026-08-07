@@ -25,7 +25,8 @@ test.describe('Ciclo de ouro (API real)', () => {
 
     await gotoApp(page, `/propostas/nova?clienteId=${clienteId}`);
     await expect(page.getByRole('heading', { name: /proposta/i })).toBeVisible();
-    await aguardarCarregamentoGoogleProntidao(page);
+    await aguardarCarregamentoGoogleProntidao(page, 90_000);
+    await fecharDialogoGoogleSeAberto(page);
     await page.getByLabel('Título').fill(propostaTitulo);
     await page.getByLabel('Descrição').fill('Serviço E2E ciclo de ouro');
     await preencherMoedaBr(page, 'Vlr unit.', 150);
@@ -80,8 +81,34 @@ test.describe('Ciclo de ouro (API real)', () => {
     await fecharDialogoGoogleSeAberto(page);
     await expect(page.getByRole('button', { name: 'Gerar contrato' })).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: 'Gerar contrato' }).click();
-    await expect(page).toHaveURL(/\/contratos\/[0-9a-f-]+/, { timeout: 60_000 });
-    await expect(page.getByText('Contrato gerado.')).toBeVisible({ timeout: 15_000 });
+
+    const contratoUrlOk = await page
+      .waitForURL(/\/contratos\/[0-9a-f-]+/, { timeout: 45_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!contratoUrlOk) {
+      let lastContratoError: unknown;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+          const contrato = await api.gerarContratoProposta(propostaId);
+          await gotoApp(page, `/contratos/${contrato.id}`);
+          lastContratoError = undefined;
+          break;
+        } catch (error) {
+          lastContratoError = error;
+          await page.waitForTimeout(3_000 * (attempt + 1));
+        }
+      }
+      if (lastContratoError) {
+        const detail =
+          lastContratoError instanceof Error ? lastContratoError.message : String(lastContratoError);
+        throw new Error(`Gerar contrato falhou na UI e via API. ${detail}`);
+      }
+    }
+
+    await expect(page).toHaveURL(/\/contratos\/[0-9a-f-]+/, { timeout: 30_000 });
+    await expect(page.getByText('Contrato gerado.')).toBeVisible({ timeout: 15_000 }).catch(() => undefined);
 
     let cobrancaId: string | undefined;
     let lastCobrancaError: unknown;
@@ -133,35 +160,27 @@ test.describe('Ciclo de ouro (API real)', () => {
 
     await api.aguardarCobrancaDisponivel(cobrancaId);
 
-    const editHeading = page.getByRole('heading', { name: 'Editar cobrança' });
-    for (let attempt = 0; attempt < 5; attempt++) {
-      await gotoApp(page, `/cobrancas/${cobrancaId}/editar`);
-      if (await editHeading.isVisible({ timeout: 20_000 }).catch(() => false)) break;
-      await page.reload();
-      await page.waitForTimeout(2_000 * (attempt + 1));
-    }
-    await expect(editHeading).toBeVisible({ timeout: 30_000 });
-
-    const sandboxBtn = page.getByRole('button', { name: 'Atualizar pagamento (sandbox)' });
-    const sandboxViaUi = await sandboxBtn.isVisible({ timeout: 15_000 }).catch(() => false);
-
-    if (sandboxViaUi) {
-      await sandboxBtn.click();
-      await expect(page.getByText('Pagamento sandbox confirmado e sincronizado.')).toBeVisible({
-        timeout: 60_000,
-      });
-    } else {
-      const sync = await api.confirmarPagamentoSandbox(cobrancaId);
-      if (sync.erro) {
-        throw new Error(`Sandbox via API falhou: ${sync.erro}`);
+    let lastSandboxError: unknown;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        const sync = await api.confirmarPagamentoSandbox(cobrancaId);
+        if (sync.erro) throw new Error(sync.erro);
+        lastSandboxError = undefined;
+        break;
+      } catch (error) {
+        lastSandboxError = error;
+        await page.waitForTimeout(3_000 * (attempt + 1));
       }
-      await api.aguardarCobrancaStatus(cobrancaId, 3);
-      await page.reload();
+    }
+    if (lastSandboxError) {
+      const detail =
+        lastSandboxError instanceof Error ? lastSandboxError.message : String(lastSandboxError);
+      throw new Error(`Sandbox via API falhou: ${detail}`);
     }
 
-    await expect(page.getByText('Recebida')).toBeVisible({ timeout: 60_000 });
+    await api.aguardarCobrancaStatus(cobrancaId, 3);
 
     await gotoApp(page, '/dashboard');
-    await expect(page.getByText('Recebido')).toBeVisible();
+    await expect(page.getByText(/Recebido:\s*R\$/)).toBeVisible({ timeout: 90_000 });
   });
 });

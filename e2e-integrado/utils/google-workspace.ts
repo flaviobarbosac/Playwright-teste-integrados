@@ -11,12 +11,39 @@ export async function fecharDialogoGoogleSeAberto(page: Page): Promise<void> {
 
 export async function aguardarCarregamentoGoogleProntidao(
   page: Page,
-  timeoutMs = 30_000,
+  timeoutMs = 60_000,
 ): Promise<void> {
-  await page.waitForResponse(
-    (response) => response.url().includes('/google/prontidao') && response.ok(),
-    { timeout: timeoutMs },
-  );
+  const salvarPronto = page.getByRole('button', { name: 'Salvar' });
+  if (await salvarPronto.isEnabled({ timeout: 3_000 }).catch(() => false)) {
+    return;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+
+    const response = await page
+      .waitForResponse(
+        (res) => res.url().includes('/google/prontidao') && res.status() < 500,
+        { timeout: Math.min(20_000, remaining) },
+      )
+      .catch(() => null);
+
+    if (response?.ok()) return;
+    if (response?.status() === 429) {
+      await page.waitForTimeout(3_000);
+      continue;
+    }
+
+    if (await salvarPronto.isEnabled({ timeout: 2_000 }).catch(() => false)) {
+      return;
+    }
+
+    await page.waitForTimeout(2_000);
+  }
+
+  await expect(salvarPronto).toBeEnabled({ timeout: 5_000 });
 }
 
 export async function aguardarGoogleWorkspace(
