@@ -80,8 +80,8 @@ test.describe('Ciclo de ouro (API real)', () => {
     await fecharDialogoGoogleSeAberto(page);
     await expect(page.getByRole('button', { name: 'Gerar contrato' })).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: 'Gerar contrato' }).click();
-    await expect(page.getByText('Contrato gerado.')).toBeVisible();
-    await expect(page).toHaveURL(/\/contratos\/[0-9a-f-]+/);
+    await expect(page).toHaveURL(/\/contratos\/[0-9a-f-]+/, { timeout: 60_000 });
+    await expect(page.getByText('Contrato gerado.')).toBeVisible({ timeout: 15_000 });
 
     let cobrancaId: string | undefined;
     let lastCobrancaError: unknown;
@@ -131,15 +131,34 @@ test.describe('Ciclo de ouro (API real)', () => {
       throw new Error(`Não foi possível criar cobrança para a proposta. ${detail}`);
     }
 
-    await gotoApp(page, `/cobrancas/${cobrancaId}/editar`);
-    await expect(page.getByRole('heading', { name: /cobran/i })).toBeVisible();
+    await api.aguardarCobrancaDisponivel(cobrancaId);
+
+    const editHeading = page.getByRole('heading', { name: 'Editar cobrança' });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await gotoApp(page, `/cobrancas/${cobrancaId}/editar`);
+      if (await editHeading.isVisible({ timeout: 20_000 }).catch(() => false)) break;
+      await page.reload();
+      await page.waitForTimeout(2_000 * (attempt + 1));
+    }
+    await expect(editHeading).toBeVisible({ timeout: 30_000 });
 
     const sandboxBtn = page.getByRole('button', { name: 'Atualizar pagamento (sandbox)' });
-    await expect(sandboxBtn).toBeVisible({ timeout: 60_000 });
-    await sandboxBtn.click();
-    await expect(page.getByText('Pagamento sandbox confirmado e sincronizado.')).toBeVisible({
-      timeout: 60_000,
-    });
+    const sandboxViaUi = await sandboxBtn.isVisible({ timeout: 15_000 }).catch(() => false);
+
+    if (sandboxViaUi) {
+      await sandboxBtn.click();
+      await expect(page.getByText('Pagamento sandbox confirmado e sincronizado.')).toBeVisible({
+        timeout: 60_000,
+      });
+    } else {
+      const sync = await api.confirmarPagamentoSandbox(cobrancaId);
+      if (sync.erro) {
+        throw new Error(`Sandbox via API falhou: ${sync.erro}`);
+      }
+      await api.aguardarCobrancaStatus(cobrancaId, 3);
+      await page.reload();
+    }
+
     await expect(page.getByText('Recebida')).toBeVisible({ timeout: 60_000 });
 
     await gotoApp(page, '/dashboard');

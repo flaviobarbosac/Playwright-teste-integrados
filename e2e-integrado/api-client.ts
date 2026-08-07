@@ -15,6 +15,15 @@ export interface PropostaResumoDto {
   clienteId: string;
 }
 
+export interface CobrancaResumoDto {
+  id: string;
+  status: number;
+}
+
+export interface CobrancaSandboxSyncDto {
+  erro?: string | null;
+}
+
 export interface CriarPropostaInput {
   clienteId: string;
   titulo: string;
@@ -130,6 +139,48 @@ export class ClampfyApiClient {
       formaPagamento,
       parcelas: 1,
     });
+  }
+
+  async obterCobranca(id: string): Promise<CobrancaResumoDto> {
+    return this.request('GET', `/Cobranca/${id}`);
+  }
+
+  async confirmarPagamentoSandbox(id: string): Promise<CobrancaSandboxSyncDto> {
+    return this.request('POST', `/Cobranca/${id}/confirmar-pagamento-sandbox`);
+  }
+
+  async aguardarCobrancaDisponivel(id: string, timeoutMs = 90_000): Promise<CobrancaResumoDto> {
+    const start = Date.now();
+    let lastError: unknown;
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const cobranca = await this.obterCobranca(id);
+        if (cobranca?.id) return cobranca;
+      } catch (error) {
+        lastError = error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+    const detail = lastError instanceof Error ? lastError.message : String(lastError ?? '');
+    throw new Error(`Cobrança ${id} indisponível após ${timeoutMs}ms. ${detail}`);
+  }
+
+  async aguardarCobrancaStatus(
+    id: string,
+    status: number,
+    timeoutMs = 90_000,
+  ): Promise<CobrancaResumoDto> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const cobranca = await this.obterCobranca(id);
+        if (cobranca.status === status) return cobranca;
+      } catch {
+        // retry until timeout
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+    throw new Error(`Cobrança ${id} não atingiu status ${status} em ${timeoutMs}ms`);
   }
 }
 

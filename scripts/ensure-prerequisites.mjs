@@ -42,10 +42,22 @@ async function ensureDockerInfra() {
   }
 
   console.log('[e2e] Subindo postgres, rabbitmq e redis via docker compose...');
-  execSync(`docker compose -f "${composeFile}" up -d postgres rabbitmq redis`, {
-    stdio: 'inherit',
-    cwd: apiRoot,
-  });
+  try {
+    execSync(`docker compose -f "${composeFile}" up -d postgres rabbitmq redis`, {
+      stdio: 'inherit',
+      cwd: apiRoot,
+    });
+  } catch {
+    console.warn('[e2e] compose up falhou — tentando iniciar containers existentes...');
+    for (const name of ['clampfy-postgres', 'clampfy-rabbitmq', 'clampfy-redis']) {
+      try {
+        execSync(`docker start ${name}`, { stdio: 'ignore' });
+        console.log(`[e2e] Container ${name} iniciado.`);
+      } catch {
+        console.warn(`[e2e] Não foi possível iniciar ${name}.`);
+      }
+    }
+  }
 
   await waitForPort(5432);
   await waitForPort(5672);
